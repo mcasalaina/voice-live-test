@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Voice Live wait test</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">FOUNDry / Voice Live</p>
+      <h1>Does the voice keep moving?</h1>
+      <p class="lede">Start the 15-second tool, then keep talking. The timeline proves whether assistant output arrives before the tool finishes.</p>
+    </header>
+
+    <section class="controls">
+      <label>Interim response
+        <select id="mode">
+          <option value="llm">LLM generated</option>
+          <option value="static">Static messages</option>
+        </select>
+      </label>
+      <button id="start">Start session</button>
+      <button id="stop" class="secondary" disabled>Stop</button>
+      <button id="trigger" class="secondary" disabled>Trigger 15s tool</button>
+      <span id="connection" class="pill">Disconnected</span>
+    </section>
+
+    <section class="tool-card" id="tool-card">
+      <div>
+        <p class="eyebrow">TOOL STATE</p>
+        <h2 id="tool-state">Idle</h2>
+      </div>
+      <div class="timer"><span id="elapsed">0</span><small>/ 15s</small></div>
+      <div class="bar"><span id="progress"></span></div>
+    </section>
+
+    <section class="grid">
+      <article>
+        <h2>Conversation</h2>
+        <div id="conversation" class="stream empty">No conversation yet.</div>
+      </article>
+      <article>
+        <h2>Event timeline</h2>
+        <div id="timeline" class="stream empty">No events yet.</div>
+      </article>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

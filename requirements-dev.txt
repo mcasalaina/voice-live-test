@@ -1,0 +1,3 @@
+-r src/agent/requirements.txt
+-r src/web/requirements.txt
+pytest>=8.4.0

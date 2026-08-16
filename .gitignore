@@ -1,0 +1,9 @@
+.azure/
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+dist/
+build/
+.DS_Store

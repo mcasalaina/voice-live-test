@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+requiredVersions:
+  extensions:
+    azure.ai.agents: ">=1.0.0-beta.4"
+name: voice-live-test
+services:
+  voice-live-test:
+    host: azure.ai.agent
+    kind: hosted
+    name: voice-live-test
+    displayName: Voice Live interim response test
+    description: Tests Voice Live interim responses during a 15-second Agent Framework tool call.
+    project: src/agent
+    language: python
+    codeConfiguration:
+      runtime: python_3_13
+      entryPoint: main.py
+      dependencyResolution: remote_build
+    protocols:
+      - protocol: invocations_ws
+        version: 1.0.0
+    environmentVariables:
+      - name: AZURE_VOICELIVE_MODEL
+        value: ${AZURE_VOICELIVE_MODEL}
+      - name: AZURE_VOICELIVE_VOICE
+        value: ${AZURE_VOICELIVE_VOICE}
+      - name: AZURE_OPENAI_ENDPOINT
+        value: ${AZURE_OPENAI_ENDPOINT}
+      - name: AZURE_OPENAI_CHAT_DEPLOYMENT
+        value: ${AZURE_OPENAI_CHAT_DEPLOYMENT}
+    container:
+      resources:
+        cpu: "1"
+        memory: 2Gi
+infra:
+  provider: microsoft.foundry
