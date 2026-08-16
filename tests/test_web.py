@@ -51,3 +51,4 @@ def test_root_redirects_to_sign_in(monkeypatch: object) -> None:
     response = TestClient(app).get("/", follow_redirects=False)
     assert response.status_code == 302
     assert response.headers["location"].startswith("/.auth/login/aad?")
+    assert "post_login_redirect_uri=%2Fapp" in response.headers["location"]

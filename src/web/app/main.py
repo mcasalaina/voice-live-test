@@ -65,13 +65,16 @@ async def restrict_tenant(
 
 
 @app.get("/")
+async def login() -> RedirectResponse:
+    return RedirectResponse(
+        url="/.auth/login/aad?post_login_redirect_uri=%2Fapp",
+        status_code=302,
+    )
+
+
+@app.get("/app")
 async def index(request: Request) -> Response:
     principal = request.headers.get("x-ms-client-principal")
-    if allowed_tenant_ids() and not principal:
-        return RedirectResponse(
-            url="/.auth/login/aad?post_login_redirect_uri=%2F",
-            status_code=302,
-        )
     if not tenant_is_allowed(principal):
         return JSONResponse(
             status_code=403,
