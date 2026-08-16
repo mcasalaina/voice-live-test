@@ -69,12 +69,20 @@ The hosted agent reuses this existing project and deployment:
 Deployed test:
 
 - Web page: <https://voice-live-test-web.proudbush-5be56d5e.eastus2.azurecontainerapps.io>
-- Hosted agent: `voice-live-test`, version 4
-- [Foundry playground](https://ai.azure.com/nextgen/r/J7ATmha0Qr-eycbbN2gkXg,rg-aycabas-3iqs,,4iq-foundry-project-resource,4iq-foundry-project/build/agents/voice-live-test/build?version=4)
+- Hosted agent: `voice-live-test`, version 5
+- [Foundry playground](https://ai.azure.com/nextgen/r/J7ATmha0Qr-eycbbN2gkXg,rg-aycabas-3iqs,,4iq-foundry-project-resource,4iq-foundry-project/build/agents/voice-live-test/build?version=5)
 
 Deploy the hosted agent with the Foundry `azd ai agent` workflow. Deploy `infra/main.bicep`, build `src/web/Dockerfile` in the provisioned ACR, update the Container App image and `FOUNDRY_AGENT_WS_ENDPOINT`, then grant the web identity `Foundry User` on the existing Foundry account.
 
 No keys or access tokens belong in repository files. Both deployed components use managed identity.
+
+The public URL is protected by Microsoft Entra authentication. Easy Auth requires
+sign-in before requests reach the app, and the proxy accepts identities only
+from the Microsoft corporate tenant or the BAMI tenant. The Entra app registration
+is multi-tenant so both directories can authenticate; the proxy then enforces the
+two-tenant allowlist from the authenticated `tid` claim. Its client secret remains
+in the Container Apps authentication configuration and is never stored in this
+repository.
 
 Voice Live doesn't accept `model-router` as a session model in East US 2, so the
 Voice Live conversation uses the existing `gpt-4.1-mini` deployment. The
@@ -90,7 +98,8 @@ one-second `tool_waiting` events.
 
 1. Open the deployed web page and select **LLM generated**.
 2. Start a session and allow microphone access.
-3. Click **Trigger 15s tool** or say "Run the slow tool test."
+3. Ask "What is the status of my simulated operation?" The agent decides to call
+   its status tool; there is no manual tool trigger in the UI.
 4. Keep talking while the tool card says **Waiting**.
 5. Confirm the event timeline contains **OUTPUT DURING TOOL** before **Tool completed**.
 6. Repeat with **Static messages** selected.

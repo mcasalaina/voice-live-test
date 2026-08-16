@@ -51,11 +51,12 @@ VOICE = os.getenv("AZURE_VOICELIVE_VOICE", "en-US-DavisNeural")
 MODEL = os.getenv("AZURE_VOICELIVE_MODEL", "gpt-4.1-mini")
 OPENAI_MODEL = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "model-router")
 INSTRUCTIONS = (
-    "You are a concise voice assistant testing interim responses. "
-    "When the user asks to run, start, or test the slow tool, call "
-    "run_slow_agent_framework_task. While the tool is running, keep the "
-    "conversation responsive and acknowledge additional user speech briefly. "
-    "Never claim the tool is complete until its result arrives."
+    "You are a concise operations assistant. When the user asks you to check "
+    "the status of their simulated operation, use check_operation_status to "
+    "retrieve fresh status instead of asking them to trigger anything manually. "
+    "While the tool is running, keep the conversation responsive and acknowledge "
+    "additional user speech briefly. Never claim the check is complete until its "
+    "result arrives."
 )
 
 
@@ -124,11 +125,11 @@ def build_session(mode: str) -> RequestSession:
         ),
         tools=[
             FunctionTool(
-                name="run_slow_agent_framework_task",
+                name="check_operation_status",
                 description=(
-                    "Run the Microsoft Agent Framework latency test. The tool "
-                    "takes 15 seconds. Use it whenever the user asks to test "
-                    "the slow tool or interim responses."
+                    "Retrieve fresh status for the user's simulated operation. "
+                    "This lookup takes 15 seconds. Use it whenever the user asks "
+                    "for the operation's current status or whether it is finished."
                 ),
                 parameters={
                     "type": "object",

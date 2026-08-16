@@ -9,6 +9,15 @@ param suffix string = '20fbc51b'
 @description('Hosted Agent invocations_ws endpoint. Set after the agent is deployed.')
 param foundryAgentWsEndpoint string = 'wss://pending.invalid'
 
+@description('Comma-separated Entra tenant IDs allowed to use the web application.')
+param allowedTenantIds string = '72f988bf-86f1-41af-91ab-2d7cd011db47,a9d9510e-7131-4355-8b7e-37e7b1e99862'
+
+@description('Client ID of the multi-tenant Entra app used by Container Apps authentication.')
+param entraClientId string = ''
+
+@description('Container Apps authentication credential setting used by the Entra provider.')
+param entraCredentialSettingName string = 'microsoft-provider-authentication-secret'
+
 var baseName = 'voice-live-test'
 var identityName = '${baseName}-web-id'
 var environmentName = '${baseName}-env'
@@ -113,6 +122,10 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'FOUNDRY_AGENT_WS_ENDPOINT'
               value: foundryAgentWsEndpoint
             }
+            {
+              name: 'ALLOWED_TENANT_IDS'
+              value: allowedTenantIds
+            }
           ]
           resources: {
             cpu: json('0.5')
@@ -141,6 +154,41 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
   dependsOn: [
     identityAcrPull
   ]
+}
+
+resource auth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (!empty(entraClientId)) {
+  parent: web
+  name: 'current'
+  properties: {
+    platform: {
+      enabled: true
+    }
+    globalValidation: {
+      excludedPaths: [
+        '/'
+        '/health'
+      ]
+      redirectToProvider: 'azureactivedirectory'
+      unauthenticatedClientAction: 'RedirectToLoginPage'
+    }
+    identityProviders: {
+      azureActiveDirectory: {
+        registration: {
+          clientId: entraClientId
+          clientSecretSettingName: entraCredentialSettingName
+          openIdIssuer: '${az.environment().authentication.loginEndpoint}common/v2.0'
+        }
+      }
+    }
+    httpSettings: {
+      requireHttps: true
+    }
+    login: {
+      tokenStore: {
+        enabled: false
+      }
+    }
+  }
 }
 
 output acrName string = registry.name

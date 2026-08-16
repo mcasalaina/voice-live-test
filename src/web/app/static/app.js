@@ -143,7 +143,6 @@ async function start() {
     socket.send(JSON.stringify({ type: "start", interim_mode: $("mode").value }));
     await startAudio();
     $("stop").disabled = false;
-    $("trigger").disabled = false;
   };
   socket.onmessage = async ({ data }) => {
     if (data instanceof ArrayBuffer) playAudio(data);
@@ -161,7 +160,6 @@ function stop(closeSocket = true) {
   $("connection").textContent = "Disconnected";
   $("start").disabled = false;
   $("stop").disabled = true;
-  $("trigger").disabled = true;
 }
 
 $("start").addEventListener("click", () => start().catch((error) => {
@@ -169,6 +167,3 @@ $("start").addEventListener("click", () => start().catch((error) => {
   stop();
 }));
 $("stop").addEventListener("click", () => stop());
-$("trigger").addEventListener("click", () => {
-  socket.send(JSON.stringify({ type: "text", content: "Run the slow tool test now." }));
-});
