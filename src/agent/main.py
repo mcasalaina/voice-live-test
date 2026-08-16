@@ -7,7 +7,8 @@ import logging
 import os
 import struct
 from contextlib import suppress
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from azure.ai.agentserver.invocations import InvocationAgentServerHost
@@ -54,11 +55,77 @@ OPENAI_MODEL = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "model-router")
 INSTRUCTIONS = (
     "You are a concise operations assistant. When the user asks you to check "
     "the status of their simulated operation, use check_operation_status to "
-    "retrieve fresh status instead of asking them to trigger anything manually. "
+    "retrieve status instead of asking them to trigger anything manually. Call "
+    "that tool at most once per session. After it returns, remember and report "
+    "the result without calling the tool again. "
     "While the tool is running, keep the conversation responsive and acknowledge "
     "additional user speech briefly. Never claim the check is complete until its "
     "result arrives."
 )
+
+
+@dataclass
+class ToolRunState:
+    status: Literal["available", "running", "finished"] = "available"
+    primary_call_id: str | None = None
+    output: str | None = None
+
+    def claim(self, call_id: str) -> bool:
+        if self.status != "available":
+            return False
+        self.status = "running"
+        self.primary_call_id = call_id
+        return True
+
+    def finish(self, output: str) -> None:
+        self.status = "finished"
+        self.output = output
+
+
+@dataclass(frozen=True)
+class PendingToolCall:
+    call_id: str
+    item_id: str
+
+
+class ResponseCoordinator:
+    def __init__(self) -> None:
+        self._idle = asyncio.Event()
+        self._idle.set()
+        self._create_lock = asyncio.Lock()
+        self._active_response_id: str | None = None
+
+    async def create(
+        self,
+        connection: Any,
+        *,
+        response: ResponseCreateParams | None = None,
+        additional_instructions: str | None = None,
+    ) -> None:
+        async with self._create_lock:
+            await self._idle.wait()
+            self._idle.clear()
+            try:
+                await connection.response.create(
+                    response=response,
+                    additional_instructions=additional_instructions,
+                )
+            except Exception:
+                self._idle.set()
+                raise
+
+    def mark_created(self, response_id: str) -> None:
+        self._active_response_id = response_id
+        self._idle.clear()
+
+    def mark_done(self, response_id: str) -> None:
+        if self._active_response_id in {None, response_id}:
+            self._active_response_id = None
+            self._idle.set()
+
+    def mark_request_failed(self) -> None:
+        if self._active_response_id is None:
+            self._idle.set()
 
 
 def account_endpoint() -> str:
@@ -129,8 +196,8 @@ def build_session(mode: str) -> RequestSession:
                 name="check_operation_status",
                 description=(
                     "Retrieve fresh status for the user's simulated operation. "
-                    "This lookup takes 15 seconds. Use it whenever the user asks "
-                    "for the operation's current status or whether it is finished."
+                    "This lookup takes 15 seconds. Use it only when no status "
+                    "result has been retrieved yet in this session."
                 ),
                 parameters={
                     "type": "object",
@@ -140,12 +207,20 @@ def build_session(mode: str) -> RequestSession:
             )
         ],
         tool_choice=ToolChoiceLiteral.AUTO,
+        parallel_tool_calls=False,
         interim_response=interim_config(mode),
     )
 
 
-def tool_completion_response() -> ResponseCreateParams:
+def tools_disabled_response() -> ResponseCreateParams:
     return ResponseCreateParams(tool_choice=ToolChoiceLiteral.NONE)
+
+
+def tools_disabled_session() -> RequestSession:
+    return RequestSession(
+        tool_choice=ToolChoiceLiteral.NONE,
+        parallel_tool_calls=False,
+    )
 
 
 async def safe_send_json(websocket: WebSocket, payload: dict[str, object]) -> None:
@@ -164,7 +239,12 @@ async def read_start_message(websocket: WebSocket) -> str:
     return mode
 
 
-async def browser_to_voicelive(websocket: WebSocket, connection: Any) -> None:
+async def browser_to_voicelive(
+    websocket: WebSocket,
+    connection: Any,
+    state: ToolRunState,
+    responses: ResponseCoordinator,
+) -> None:
     while True:
         message = await websocket.receive()
         if message.get("type") == "websocket.disconnect":
@@ -185,15 +265,22 @@ async def browser_to_voicelive(websocket: WebSocket, connection: Any) -> None:
                     content=[InputTextContentPart(text=str(payload["content"]))]
                 )
             )
-            await connection.response.create()
+            response = (
+                ResponseCreateParams()
+                if state.status == "available"
+                else tools_disabled_response()
+            )
+            await responses.create(connection, response=response)
 
 
 async def execute_tool(
     websocket: WebSocket,
     connection: Any,
-    pending: dict[str, str],
+    pending: PendingToolCall,
+    state: ToolRunState,
+    responses: ResponseCoordinator,
 ) -> None:
-    call_id = pending["call_id"]
+    call_id = pending.call_id
     await safe_send_json(
         websocket,
         {"type": "tool_started", "call_id": call_id, "duration_seconds": 15},
@@ -211,49 +298,87 @@ async def execute_tool(
             notify=notify,
         )
         output = json.dumps({"ok": True, "result": result})
-        await safe_send_json(
-            websocket, {"type": "tool_completed", "call_id": call_id}
-        )
+        state.finish(output)
+        completion_event: dict[str, object] = {
+            "type": "tool_completed",
+            "call_id": call_id,
+        }
     except Exception as exc:
         logger.exception("Agent Framework tool failed")
         output = json.dumps({"ok": False, "error": str(exc)})
-        await safe_send_json(
-            websocket,
-            {"type": "tool_failed", "call_id": call_id, "message": str(exc)},
-        )
+        state.finish(output)
+        completion_event = {
+            "type": "tool_failed",
+            "call_id": call_id,
+            "message": str(exc),
+        }
     finally:
         sync_credential.close()
 
     await connection.conversation.item.create(
-        previous_item_id=pending["item_id"],
+        previous_item_id=pending.item_id,
         item=FunctionCallOutputItem(call_id=call_id, output=output),
     )
-    await connection.response.create(
-        response=tool_completion_response(),
+    await responses.create(
+        connection,
+        response=tools_disabled_response(),
         additional_instructions=(
             "The operation status tool has finished. Report its result to the "
             "user as the final answer for this request. Do not call any tool in "
             "this response."
         ),
     )
+    await safe_send_json(websocket, completion_event)
 
 
-async def voicelive_to_browser(websocket: WebSocket, connection: Any) -> None:
-    pending: dict[str, str] | None = None
+async def answer_duplicate_tool_call(
+    connection: Any,
+    pending: PendingToolCall,
+    state: ToolRunState,
+) -> None:
+    if state.status == "finished" and state.output:
+        output = state.output
+    else:
+        output = json.dumps(
+            {
+                "ok": False,
+                "status": "already_running",
+                "message": "The operation status check is already running.",
+            }
+        )
+
+    await connection.conversation.item.create(
+        previous_item_id=pending.item_id,
+        item=FunctionCallOutputItem(call_id=pending.call_id, output=output),
+    )
+
+
+async def voicelive_to_browser(
+    websocket: WebSocket,
+    connection: Any,
+    state: ToolRunState,
+    responses: ResponseCoordinator,
+) -> None:
+    pending_calls: dict[str, PendingToolCall] = {}
     tool_task: asyncio.Task[None] | None = None
+    session_announced = False
 
     async for event in connection:
         event_type = event.type
         if event_type == ServerEventType.SESSION_UPDATED:
-            await safe_send_json(
-                websocket,
-                {
-                    "type": "session_started",
-                    "session_id": event.session.id,
-                    "voice": VOICE,
-                    "model": MODEL,
-                },
-            )
+            if not session_announced:
+                session_announced = True
+                await safe_send_json(
+                    websocket,
+                    {
+                        "type": "session_started",
+                        "session_id": event.session.id,
+                        "voice": VOICE,
+                        "model": MODEL,
+                    },
+                )
+        elif event_type == ServerEventType.RESPONSE_CREATED:
+            responses.mark_created(event.response.id)
         elif event_type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
             await safe_send_json(websocket, {"type": "user_speech_started"})
         elif event_type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
@@ -292,32 +417,32 @@ async def voicelive_to_browser(websocket: WebSocket, connection: Any) -> None:
             )
         elif event_type == ServerEventType.CONVERSATION_ITEM_CREATED:
             if event.item.type == ItemType.FUNCTION_CALL:
-                pending = {
-                    "name": event.item.name,
-                    "call_id": event.item.call_id,
-                    "item_id": event.item.id,
-                }
+                pending_calls[event.item.call_id] = PendingToolCall(
+                    call_id=event.item.call_id,
+                    item_id=event.item.id,
+                )
         elif event_type == ServerEventType.RESPONSE_FUNCTION_CALL_ARGUMENTS_DONE:
-            if pending and event.call_id == pending["call_id"]:
-                pending["arguments"] = event.arguments
-                if tool_task and not tool_task.done():
-                    await safe_send_json(
-                        websocket,
-                        {
-                            "type": "tool_failed",
-                            "call_id": pending["call_id"],
-                            "message": "Only one slow tool may run at a time.",
-                        },
+            pending = pending_calls.pop(event.call_id, None)
+            if pending:
+                if state.claim(pending.call_id):
+                    await connection.session.update(session=tools_disabled_session())
+                    tool_task = asyncio.create_task(
+                        execute_tool(
+                            websocket,
+                            connection,
+                            pending,
+                            state,
+                            responses,
+                        ),
+                        name=f"tool-{pending.call_id}",
                     )
                 else:
-                    tool_task = asyncio.create_task(
-                        execute_tool(websocket, connection, pending),
-                        name=f"tool-{pending['call_id']}",
-                    )
-                pending = None
+                    await answer_duplicate_tool_call(connection, pending, state)
         elif event_type == ServerEventType.RESPONSE_DONE:
+            responses.mark_done(event.response.id)
             await safe_send_json(websocket, {"type": "response_done"})
         elif event_type == ServerEventType.ERROR:
+            responses.mark_request_failed()
             error = getattr(event, "error", None)
             await safe_send_json(
                 websocket,
@@ -340,6 +465,7 @@ app = InvocationAgentServerHost()
 @app.ws_handler
 async def handle_ws(websocket: WebSocket) -> None:
     credential = DefaultAzureCredential()
+    state = ToolRunState()
     try:
         mode = await read_start_message(websocket)
         async with voicelive_connect(
@@ -347,12 +473,15 @@ async def handle_ws(websocket: WebSocket) -> None:
             credential=credential,
             model=MODEL,
         ) as connection:
+            responses = ResponseCoordinator()
             await connection.session.update(session=build_session(mode))
             forward = asyncio.create_task(
-                browser_to_voicelive(websocket, connection), name="browser-to-vl"
+                browser_to_voicelive(websocket, connection, state, responses),
+                name="browser-to-vl",
             )
             backward = asyncio.create_task(
-                voicelive_to_browser(websocket, connection), name="vl-to-browser"
+                voicelive_to_browser(websocket, connection, state, responses),
+                name="vl-to-browser",
             )
             done, pending_tasks = await asyncio.wait(
                 {forward, backward}, return_when=asyncio.FIRST_COMPLETED
