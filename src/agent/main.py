@@ -27,6 +27,7 @@ from azure.ai.voicelive.models import (
     Modality,
     OutputAudioFormat,
     RequestSession,
+    ResponseCreateParams,
     ServerEventType,
     ServerVad,
     StaticInterimResponseConfig,
@@ -143,6 +144,10 @@ def build_session(mode: str) -> RequestSession:
     )
 
 
+def tool_completion_response() -> ResponseCreateParams:
+    return ResponseCreateParams(tool_choice=ToolChoiceLiteral.NONE)
+
+
 async def safe_send_json(websocket: WebSocket, payload: dict[str, object]) -> None:
     if websocket.application_state != WebSocketState.DISCONNECTED:
         await websocket.send_json(payload)
@@ -223,7 +228,14 @@ async def execute_tool(
         previous_item_id=pending["item_id"],
         item=FunctionCallOutputItem(call_id=call_id, output=output),
     )
-    await connection.response.create()
+    await connection.response.create(
+        response=tool_completion_response(),
+        additional_instructions=(
+            "The operation status tool has finished. Report its result to the "
+            "user as the final answer for this request. Do not call any tool in "
+            "this response."
+        ),
+    )
 
 
 async def voicelive_to_browser(websocket: WebSocket, connection: Any) -> None:

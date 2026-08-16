@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "src" / "agent"))
 
 from slow_task import wait_exactly_15_seconds
+from main import tool_completion_response
 
 
 def test_slow_tool_reports_each_second() -> None:
@@ -22,3 +23,7 @@ def test_slow_tool_reports_each_second() -> None:
     assert events[0] == {"type": "framework_tool_started", "duration_seconds": 15}
     assert len([event for event in events if event["type"] == "tool_waiting"]) == 15
     assert events[-1]["remaining_seconds"] == 0
+
+
+def test_completion_response_disables_tools() -> None:
+    assert tool_completion_response().as_dict()["tool_choice"] == "none"
