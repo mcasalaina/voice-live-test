@@ -52,3 +52,17 @@ def test_root_redirects_to_sign_in(monkeypatch: object) -> None:
     assert response.status_code == 302
     assert response.headers["location"].startswith("/.auth/login/aad?")
     assert "post_login_redirect_uri=%2Fapp" in response.headers["location"]
+
+
+def test_app_links_served_favicon(monkeypatch: object) -> None:
+    monkeypatch.setenv("ALLOWED_TENANT_IDS", "tenant-a")
+    headers = {"x-ms-client-principal": principal_header("tenant-a")}
+    client = TestClient(app)
+
+    page = client.get("/app", headers=headers)
+    favicon = client.get("/static/favicon.svg", headers=headers)
+
+    assert 'href="/static/favicon.svg"' in page.text
+    assert favicon.status_code == 200
+    assert favicon.headers["content-type"] == "image/svg+xml"
+    assert favicon.text.startswith("<svg")
