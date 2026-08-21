@@ -49,7 +49,7 @@ logger = logging.getLogger("voice-live-test")
 
 SAMPLE_RATE = 24_000
 CHANNELS = 1
-VOICE = os.getenv("AZURE_VOICELIVE_VOICE", "en-US-DavisNeural")
+VOICE = os.getenv("AZURE_VOICELIVE_VOICE", "en-US-AndrewMultilingualNeural")
 MODEL = os.getenv("AZURE_VOICELIVE_MODEL", "gpt-4.1-mini")
 OPENAI_MODEL = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "model-router")
 INSTRUCTIONS = (

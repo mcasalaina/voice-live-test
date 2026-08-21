@@ -12,7 +12,7 @@ Azure Container Apps web/proxy
   │  managed-identity authenticated WSS
   ▼
 Foundry Hosted Agent (`invocations_ws`)
-  ├─ Azure Voice Live: gpt-4.1-mini + en-US-DavisNeural
+  ├─ Azure Voice Live: gpt-4.1-mini + en-US-AndrewMultilingualNeural
   └─ Microsoft Agent Framework: model-router + one 15-second slow_operation tool
 ```
 
@@ -63,14 +63,14 @@ The hosted agent reuses this existing project and deployment:
 | Project ARM ID | `/subscriptions/27b0139a-16b4-42bf-9ec9-c6db3768245e/resourceGroups/rg-aycabas-3iqs/providers/Microsoft.CognitiveServices/accounts/4iq-foundry-project-resource/projects/4iq-foundry-project` |
 | Agent Framework model deployment | `model-router` |
 | Voice Live model deployment | `gpt-4.1-mini` |
-| Voice | `en-US-DavisNeural` |
+| Voice | `en-US-AndrewMultilingualNeural` |
 | Resource group | `rg-aycabas-3iqs` |
 
 Deployed test:
 
 - Web page: <https://voice-live-test-web.proudbush-5be56d5e.eastus2.azurecontainerapps.io>
-- Hosted agent: `voice-live-test`, version 10
-- [Foundry playground](https://ai.azure.com/nextgen/r/J7ATmha0Qr-eycbbN2gkXg,rg-aycabas-3iqs,,4iq-foundry-project-resource,4iq-foundry-project/build/agents/voice-live-test/build?version=10)
+- Hosted agent: `voice-live-test`, version 11
+- [Foundry playground](https://ai.azure.com/nextgen/r/J7ATmha0Qr-eycbbN2gkXg,rg-aycabas-3iqs,,4iq-foundry-project-resource,4iq-foundry-project/build/agents/voice-live-test/build?version=11)
 
 Deploy the hosted agent with the Foundry `azd ai agent` workflow. Deploy `infra/main.bicep`, build `src/web/Dockerfile` in the provisioned ACR, update the Container App image and `FOUNDRY_AGENT_WS_ENDPOINT`, then grant the web identity `Foundry User` on the existing Foundry account.
 
